@@ -1,0 +1,435 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>ratelimiter: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">sproxy/ratelimiter/cacheTracker.go (83.3%)</option>
+				
+				<option value="file1">sproxy/ratelimiter/inMemoryTracker.go (100.0%)</option>
+				
+				<option value="file2">sproxy/ratelimiter/mocks/Cache.go (40.6%)</option>
+				
+				<option value="file3">sproxy/storage/cache/redis.go (77.8%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package ratelimiter
+
+import (
+        "context"
+        "sproxy/storage/cache"
+)
+
+type CacheRateLimiter struct {
+        cacheClient cache.Cache
+        ctx         context.Context
+        // could be safely loaded on restart in memory and maintained since it won't be a huge number( we hope we have a million customer tho :pray: :pray: )
+        lockedUsers map[string]bool
+        totalLock   bool
+}
+
+func (crl *CacheRateLimiter) UpdateTrafficUsageForUser(userId string, requestSize int) (bool, error) <span class="cov8" title="1">{
+        if crl.lockedUsers[userId] || crl.totalLock </span><span class="cov8" title="1">{
+                return false, nil
+        }</span>
+
+        <span class="cov8" title="1">newUserUsage, newGlobalUsage, err := crl.cacheClient.IncrementUsage(userId, requestSize)
+        if err != nil </span><span class="cov0" title="0">{
+                return false, err
+        }</span>
+
+        <span class="cov8" title="1">crl.lockedUsers[userId] = newUserUsage &gt;= QUOTA_PER_USER
+        if crl.lockedUsers[userId] </span><span class="cov8" title="1">{
+                crl.cacheClient.BlacklistUser(userId)
+        }</span>
+
+        <span class="cov8" title="1">crl.totalLock = newGlobalUsage &gt;= GLOBAL_QUOTA_LIMIT
+        return true, nil</span>
+}
+
+func (crl *CacheRateLimiter) FetchTrafficStatsForUser(userId string) (int64, error) <span class="cov8" title="1">{
+
+        return crl.cacheClient.FetchUsage(userId)
+
+}</span>
+
+func (crl *CacheRateLimiter) FetchGlobalTrafficStats() (int64, error) <span class="cov8" title="1">{
+        return crl.cacheClient.FetchGlobalUsage()
+}</span>
+
+func NewCacheRateLimiter(ctx context.Context, cacheClient cache.Cache) (CacheRateLimiter, error) <span class="cov8" title="1">{
+
+        if cacheClient == nil </span><span class="cov8" title="1">{
+                cacheClient = cache.NewRedisClient(ctx)
+        }</span>
+
+        <span class="cov8" title="1">usage, err := cacheClient.FetchGlobalUsage()
+        if err != nil </span><span class="cov0" title="0">{
+                return CacheRateLimiter{}, nil
+        }</span>
+
+        <span class="cov8" title="1">users, err := cacheClient.GetBlacklistedUsers()
+        if err != nil </span><span class="cov0" title="0">{
+                return CacheRateLimiter{}, err
+        }</span>
+
+        <span class="cov8" title="1">lockedUsers := make(map[string]bool)
+        for _, usr := range users </span><span class="cov0" title="0">{
+                lockedUsers[usr] = true
+        }</span>
+
+        <span class="cov8" title="1">return CacheRateLimiter{
+                cacheClient: cacheClient,
+                ctx:         ctx,
+                lockedUsers: lockedUsers,
+                totalLock:   usage &gt;= GLOBAL_QUOTA_LIMIT,
+        }, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package ratelimiter
+
+type InMemoryRateLimiter struct {
+        trafficData map[string]int64
+        lockedUsers map[string]bool
+        totalLock   bool
+}
+
+func (imrl *InMemoryRateLimiter) UpdateTrafficUsageForUser(userId string, requestSize int) (bool, error) <span class="cov8" title="1">{
+        if imrl.lockedUsers[userId] || imrl.totalLock </span><span class="cov8" title="1">{
+                return false, nil
+        }</span>
+
+        <span class="cov8" title="1">imrl.lockedUsers[userId] = imrl.trafficData[userId]+int64(requestSize) &gt;= QUOTA_PER_USER
+        imrl.totalLock = imrl.trafficData[GLOBAL_USAGE_KEY]+int64(requestSize) &gt;= GLOBAL_QUOTA_LIMIT
+
+        imrl.trafficData[userId] += int64(requestSize)
+        imrl.trafficData[GLOBAL_USAGE_KEY] += int64(requestSize)
+
+        return true, nil</span>
+}
+
+func (imrl *InMemoryRateLimiter) FetchTrafficStatsForUser(userId string) (int64, error) <span class="cov8" title="1">{
+
+        return imrl.trafficData[userId], nil
+}</span>
+
+func (imrl *InMemoryRateLimiter) FetchGlobalTrafficStats() (int64, error) <span class="cov8" title="1">{
+
+        return imrl.trafficData[GLOBAL_USAGE_KEY], nil
+}</span>
+
+func NewInMemoryRateLimiter() InMemoryRateLimiter <span class="cov8" title="1">{
+
+        return InMemoryRateLimiter{
+                trafficData: make(map[string]int64),
+                lockedUsers: make(map[string]bool),
+                totalLock:   false,
+        }
+}</span>
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">// Code generated by mockery v2.32.3. DO NOT EDIT.
+
+package mocks
+
+import mock "github.com/stretchr/testify/mock"
+
+// Cache is an autogenerated mock type for the Cache type
+type Cache struct {
+        mock.Mock
+}
+
+// BlacklistUser provides a mock function with given fields: userId
+func (_m *Cache) BlacklistUser(userId string) error <span class="cov8" title="1">{
+        ret := _m.Called(userId)
+
+        var r0 error
+        if rf, ok := ret.Get(0).(func(string) error); ok </span><span class="cov8" title="1">{
+                r0 = rf(userId)
+        }</span> else<span class="cov0" title="0"> {
+                r0 = ret.Error(0)
+        }</span>
+
+        <span class="cov8" title="1">return r0</span>
+}
+
+// FetchGlobalUsage provides a mock function with given fields:
+func (_m *Cache) FetchGlobalUsage() (int64, error) <span class="cov8" title="1">{
+        ret := _m.Called()
+
+        var r0 int64
+        var r1 error
+        if rf, ok := ret.Get(0).(func() (int64, error)); ok </span><span class="cov8" title="1">{
+                return rf()
+        }</span>
+        <span class="cov0" title="0">if rf, ok := ret.Get(0).(func() int64); ok </span><span class="cov0" title="0">{
+                r0 = rf()
+        }</span> else<span class="cov0" title="0"> {
+                r0 = ret.Get(0).(int64)
+        }</span>
+
+        <span class="cov0" title="0">if rf, ok := ret.Get(1).(func() error); ok </span><span class="cov0" title="0">{
+                r1 = rf()
+        }</span> else<span class="cov0" title="0"> {
+                r1 = ret.Error(1)
+        }</span>
+
+        <span class="cov0" title="0">return r0, r1</span>
+}
+
+// FetchUsage provides a mock function with given fields: _a0
+func (_m *Cache) FetchUsage(_a0 string) (int64, error) <span class="cov0" title="0">{
+        ret := _m.Called(_a0)
+
+        var r0 int64
+        var r1 error
+        if rf, ok := ret.Get(0).(func(string) (int64, error)); ok </span><span class="cov0" title="0">{
+                return rf(_a0)
+        }</span>
+        <span class="cov0" title="0">if rf, ok := ret.Get(0).(func(string) int64); ok </span><span class="cov0" title="0">{
+                r0 = rf(_a0)
+        }</span> else<span class="cov0" title="0"> {
+                r0 = ret.Get(0).(int64)
+        }</span>
+
+        <span class="cov0" title="0">if rf, ok := ret.Get(1).(func(string) error); ok </span><span class="cov0" title="0">{
+                r1 = rf(_a0)
+        }</span> else<span class="cov0" title="0"> {
+                r1 = ret.Error(1)
+        }</span>
+
+        <span class="cov0" title="0">return r0, r1</span>
+}
+
+// GetBlacklistedUsers provides a mock function with given fields:
+func (_m *Cache) GetBlacklistedUsers() ([]string, error) <span class="cov8" title="1">{
+        ret := _m.Called()
+
+        var r0 []string
+        var r1 error
+        if rf, ok := ret.Get(0).(func() ([]string, error)); ok </span><span class="cov8" title="1">{
+                return rf()
+        }</span>
+        <span class="cov0" title="0">if rf, ok := ret.Get(0).(func() []string); ok </span><span class="cov0" title="0">{
+                r0 = rf()
+        }</span> else<span class="cov0" title="0"> {
+                if ret.Get(0) != nil </span><span class="cov0" title="0">{
+                        r0 = ret.Get(0).([]string)
+                }</span>
+        }
+
+        <span class="cov0" title="0">if rf, ok := ret.Get(1).(func() error); ok </span><span class="cov0" title="0">{
+                r1 = rf()
+        }</span> else<span class="cov0" title="0"> {
+                r1 = ret.Error(1)
+        }</span>
+
+        <span class="cov0" title="0">return r0, r1</span>
+}
+
+// IncrementUsage provides a mock function with given fields: userId, val
+func (_m *Cache) IncrementUsage(userId string, val int) (int64, int64, error) <span class="cov8" title="1">{
+        ret := _m.Called(userId, val)
+
+        var r0 int64
+        var r1 int64
+        var r2 error
+        if rf, ok := ret.Get(0).(func(string, int) (int64, int64, error)); ok </span><span class="cov8" title="1">{
+                return rf(userId, val)
+        }</span>
+        <span class="cov0" title="0">if rf, ok := ret.Get(0).(func(string, int) int64); ok </span><span class="cov0" title="0">{
+                r0 = rf(userId, val)
+        }</span> else<span class="cov0" title="0"> {
+                r0 = ret.Get(0).(int64)
+        }</span>
+
+        <span class="cov0" title="0">if rf, ok := ret.Get(1).(func(string, int) int64); ok </span><span class="cov0" title="0">{
+                r1 = rf(userId, val)
+        }</span> else<span class="cov0" title="0"> {
+                r1 = ret.Get(1).(int64)
+        }</span>
+
+        <span class="cov0" title="0">if rf, ok := ret.Get(2).(func(string, int) error); ok </span><span class="cov0" title="0">{
+                r2 = rf(userId, val)
+        }</span> else<span class="cov0" title="0"> {
+                r2 = ret.Error(2)
+        }</span>
+
+        <span class="cov0" title="0">return r0, r1, r2</span>
+}
+
+// NewCache creates a new instance of Cache. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
+// The first argument is typically a *testing.T value.
+func NewCache(t interface {
+        mock.TestingT
+        Cleanup(func())
+}) *Cache <span class="cov8" title="1">{
+        mock := &amp;Cache{}
+        mock.Mock.Test(t)
+
+        t.Cleanup(func() </span><span class="cov8" title="1">{ mock.AssertExpectations(t) }</span>)
+
+        <span class="cov8" title="1">return mock</span>
+}
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package cache
+
+import (
+        "context"
+
+        "github.com/redis/go-redis/v9"
+)
+
+type RedisCache struct {
+        cacheClient *redis.Client
+        ctx         context.Context
+}
+
+func (rc RedisCache) IncrementUsage(userId string, val int) (int64, int64, error) <span class="cov8" title="1">{
+        newUserUsage, err := rc.cacheClient.IncrBy(rc.ctx, userId, int64(val)).Result()
+        if err != nil </span><span class="cov0" title="0">{
+                return 0, 0, err
+        }</span>
+
+        <span class="cov8" title="1">newGlobalUsage, err := rc.cacheClient.IncrBy(rc.ctx, GLOBAL_USAGE_KEY, int64(val)).Result()
+
+        return newUserUsage, newGlobalUsage, err</span>
+}
+
+func (rc RedisCache) FetchGlobalUsage() (int64, error) <span class="cov8" title="1">{
+        val, err := rc.cacheClient.Get(rc.ctx, GLOBAL_USAGE_KEY).Int64()
+
+        if err != redis.Nil </span><span class="cov8" title="1">{
+                return val, err
+        }</span>
+
+        <span class="cov8" title="1">return val, nil</span>
+}
+
+func (rc RedisCache) FetchUsage(userId string) (int64, error) <span class="cov8" title="1">{
+        val, err := rc.cacheClient.Get(rc.ctx, userId).Int64()
+
+        if err != redis.Nil </span><span class="cov8" title="1">{
+                return val, err
+        }</span>
+
+        <span class="cov0" title="0">return val, nil</span>
+}
+
+func (rc RedisCache) GetBlacklistedUsers() ([]string, error) <span class="cov8" title="1">{
+        return rc.cacheClient.SMembers(rc.ctx, BLACKLIST_SET_KEY).Result()
+}</span>
+
+func (rc RedisCache) BlacklistUser(userId string) error <span class="cov0" title="0">{
+        _, err := rc.cacheClient.SAdd(rc.ctx, userId).Result()
+        return err
+}</span>
+
+func NewRedisClient(ctx context.Context) RedisCache <span class="cov8" title="1">{
+        rdb := redis.NewClient(&amp;redis.Options{
+                Addr:     "localhost:6379",
+                Password: "", // no password set
+                DB:       0,  // use default DB
+        })
+
+        return RedisCache{
+                ctx:         ctx,
+                cacheClient: rdb,
+        }
+}</span>
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>
